@@ -8,5 +8,14 @@ entry_points:
       data_dir: {type: str, default: "adult_income_preprocessing"}
       max_iter: {type: int, default: 200}
       solver: {type: str, default: "liblinear"}
+      C: {type: float, default: 1.0}
       run_name: {type: str, default: "ci_retrain"}
-    command: "python modelling.py --data_dir {data_dir} --max_iter {max_iter} --solver {solver} --run_name {run_name}"
+      out_dir: {type: str, default: "artifacts_out"}
+    command: >
+      python modelling.py
+      --data_dir {data_dir}
+      --max_iter {max_iter}
+      --solver {solver}
+      --C {C}
+      --run_name {run_name}
+      --out_dir {out_dir}

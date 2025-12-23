@@ -1,0 +1,12 @@
+name: adult-income-ci
+
+conda_env: conda.yaml
+
+entry_points:
+  main:
+    parameters:
+      data_dir: {type: str, default: "adult_income_preprocessing"}
+      max_iter: {type: int, default: 200}
+      solver: {type: str, default: "liblinear"}
+      run_name: {type: str, default: "ci_retrain"}
+    command: "python modelling.py --data_dir {data_dir} --max_iter {max_iter} --solver {solver} --run_name {run_name}"

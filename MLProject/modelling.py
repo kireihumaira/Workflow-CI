@@ -39,13 +39,11 @@ def main():
     out_dir = os.path.join(here, args.out_dir)
     ensure_dir(out_dir)
 
-    # ===== Load preprocessed data (CSR sparse) =====
     X_train = load_csr_from_npz(os.path.join(data_dir, "X_train.npz"))
     X_test  = load_csr_from_npz(os.path.join(data_dir, "X_test.npz"))
     y_train = np.load(os.path.join(data_dir, "y_train.npy"), allow_pickle=True)
     y_test  = np.load(os.path.join(data_dir, "y_test.npy"), allow_pickle=True)
 
-    # ===== Tracking: default local file store (aman untuk GitHub Actions) =====
     tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", f"file://{os.path.join(here, 'mlruns')}")
     exp_name = os.environ.get("MLFLOW_EXPERIMENT_NAME", "ci-workflow")
 
@@ -59,15 +57,14 @@ def main():
     )
 
     with mlflow.start_run(run_name=args.run_name) as run:
-        # ---- Train
+        # Train
         model.fit(X_train, y_train)
         preds = model.predict(X_test)
 
-        # ---- Metrics
+        # -Metrics
         acc = accuracy_score(y_test, preds)
         f1 = f1_score(y_test, preds, pos_label=">50K")
 
-        # ---- Params + Metrics (manual logging)
         mlflow.log_param("model", "LogisticRegression")
         mlflow.log_param("max_iter", args.max_iter)
         mlflow.log_param("solver", args.solver)
@@ -76,16 +73,11 @@ def main():
         mlflow.log_metric("accuracy", acc)
         mlflow.log_metric("f1_score", f1)
 
-        # ---- Log model to MLflow artifacts
-        # (ini buat tracking di mlruns / kalau nanti mau pakai runs:/ juga)
         mlflow.sklearn.log_model(model, "model")
 
-        # ---- ALSO save model to a FIXED PATH for Docker build (paling stabil)
-        # build-docker akan pakai path ini: MLProject/artifacts_out/model
         local_model_dir = os.path.join(out_dir, "model")
         mlflow.sklearn.save_model(model, local_model_dir)
 
-        # ---- Extra artifacts (Skilled/Advance)
         report = classification_report(y_test, preds)
         report_path = os.path.join(out_dir, "classification_report.txt")
         with open(report_path, "w") as f:
@@ -121,3 +113,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

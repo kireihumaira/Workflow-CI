@@ -32,46 +32,60 @@ def main():
     parser.add_argument("--out_dir", type=str, default="artifacts_out")
     args = parser.parse_args()
 
+    # --- IMPORTANT: tracking URI ambil dari ENV (DagsHub) ---
+    tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
+    exp_name = os.environ.get("MLFLOW_EXPERIMENT_NAME", "ci-workflow")
+
+    if not tracking_uri:
+        raise RuntimeError(
+            "MLFLOW_TRACKING_URI belum diset. "
+            "Di GitHub Actions kamu wajib set secrets/env untuk DagsHub."
+        )
+
+    mlflow.set_tracking_uri(tracking_uri)
+    mlflow.set_experiment(exp_name)
+
     here = os.path.dirname(os.path.abspath(__file__))
     data_dir = os.path.join(here, args.data_dir)
     out_dir = os.path.join(here, args.out_dir)
     ensure_dir(out_dir)
 
+    # load preprocessed data
     X_train = load_csr_from_npz(os.path.join(data_dir, "X_train.npz"))
     X_test  = load_csr_from_npz(os.path.join(data_dir, "X_test.npz"))
     y_train = np.load(os.path.join(data_dir, "y_train.npy"), allow_pickle=True)
     y_test  = np.load(os.path.join(data_dir, "y_test.npy"), allow_pickle=True)
 
-    # tracking lokal di runner (buat CI)
-    tracking_dir = os.path.join(here, "mlruns")
-    mlflow.set_tracking_uri(f"file://{tracking_dir}")
-    mlflow.set_experiment("ci-workflow")
-
     model = LogisticRegression(max_iter=args.max_iter, solver=args.solver)
 
-    # Basic: autolog, Skilled/Advance: artifacts juga disimpan
+    # Autolog (buat memenuhi bagian autolog) + kita tetap log artifacts tambahan (advance)
     mlflow.sklearn.autolog(log_models=True)
 
-    with mlflow.start_run(run_name=args.run_name):
+    with mlflow.start_run(run_name=args.run_name) as run:
+        run_id = run.info.run_id
+
         model.fit(X_train, y_train)
         preds = model.predict(X_test)
 
         acc = accuracy_score(y_test, preds)
         f1 = f1_score(y_test, preds, pos_label=">50K")
 
+        # manual metrics tambahan (opsional tapi aman)
         mlflow.log_metric("test_accuracy_manual", acc)
         mlflow.log_metric("test_f1_manual", f1)
-        mlflow.log_param("max_iter", args.max_iter)
         mlflow.log_param("solver", args.solver)
+        mlflow.log_param("max_iter", args.max_iter)
 
-        # Artifacts tambahan (untuk bukti)
+        # --- Artifacts tambahan (minimal 2) ---
         report = classification_report(y_test, preds)
         report_path = os.path.join(out_dir, "classification_report.txt")
         with open(report_path, "w") as f:
             f.write(report)
         mlflow.log_artifact(report_path)
 
-        ConfusionMatrixDisplay.from_predictions(y_test, preds, display_labels=["<=50K", ">50K"])
+        ConfusionMatrixDisplay.from_predictions(
+            y_test, preds, display_labels=["<=50K", ">50K"]
+        )
         plt.tight_layout()
         cm_path = os.path.join(out_dir, "confusion_matrix.png")
         plt.savefig(cm_path, dpi=150)
@@ -79,18 +93,30 @@ def main():
         mlflow.log_artifact(cm_path)
 
         meta = {
+            "run_id": run_id,
             "n_train": int(X_train.shape[0]),
             "n_test": int(X_test.shape[0]),
             "n_features": int(X_train.shape[1]),
             "pos_label": ">50K",
             "accuracy": float(acc),
-            "f1": float(f1)
+            "f1": float(f1),
+            "tracking_uri": tracking_uri,
+            "experiment": exp_name,
         }
         meta_path = os.path.join(out_dir, "run_meta.json")
         with open(meta_path, "w") as f:
             json.dump(meta, f, indent=2)
         mlflow.log_artifact(meta_path)
 
+        # simpan run_id ke file biar CI gampang ambil
+        runid_path = os.path.join(out_dir, "run_id.txt")
+        with open(runid_path, "w") as f:
+            f.write(run_id)
+
+        # log juga sebagai artifact
+        mlflow.log_artifact(runid_path)
+
+        print(f"RUN_ID={run_id}")
         print("Done. Accuracy:", acc, "F1:", f1)
         print("Artifacts saved at:", out_dir)
 
